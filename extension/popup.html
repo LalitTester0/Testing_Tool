@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Automation Recorder</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Automation Recorder</h1>
+      <div id="status-badge" class="badge idle">Idle</div>
+    </header>
+    
+    <main>
+      <div class="controls">
+        <button id="record-btn" class="primary">
+          <span class="icon">⏺</span> Record
+        </button>
+        <button id="pause-btn" disabled>
+          <span class="icon">⏸</span> Pause
+        </button>
+        <button id="stop-btn" class="danger" disabled>
+          <span class="icon">⏹</span> Stop
+        </button>
+      </div>
+
+      <div class="stats">
+        <p>Events captured: <span id="event-count">0</span></p>
+      </div>
+
+      <div class="export-section">
+        <label for="locator-strategy" style="font-size: 12px; margin-bottom: 4px; display: block;">Locator Strategy:</label>
+        <select id="locator-strategy" style="margin-bottom: 10px;">
+          <option value="smart">Smart (ID > CSS > XPath)</option>
+          <option value="xpath">XPath Priority</option>
+          <option value="css">CSS Priority</option>
+        </select>
+
+        <label for="language-select" style="font-size: 12px; margin-bottom: 4px; display: block;">Output Language:</label>
+        <select id="language-select">
+          <option value="java">Selenium Java (TestNG)</option>
+          <option value="python">Selenium Python (Pytest)</option>
+        </select>
+        <button id="download-btn" class="secondary" disabled>
+          Download Script
+        </button>
+      </div>
+    </main>
+
+    <footer>
+      <button id="clear-btn" class="text-btn">Clear Recording</button>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -50,11 +50,7 @@
         }
 
         try {
-            chrome.runtime.sendMessage({ action: 'recordEvent', event: eventData }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('AI Recorder: Runtime error:', chrome.runtime.lastError.message);
-                }
-            });
+            chrome.runtime.sendMessage({ action: 'recordEvent', event: eventData });
         } catch (error) {
             console.error('AI Automation Recorder Error:', error);
             if (!window._aiRecorderAlerted) {

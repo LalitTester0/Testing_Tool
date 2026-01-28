@@ -10,17 +10,34 @@ chrome.webRequest.onBeforeRequest.addListener(
         if (isRecording) {
             // Filter irrelevant types
             if (details.type === 'xmlhttprequest' || details.type === 'fetch' || details.method !== 'GET') {
+                console.log('API Captured:', details.method, details.url, 'Timeout:', Date.now());
                 // Store request details
-                networkLog.push({
+                const reqData = {
                     requestId: details.requestId,
                     url: details.url,
                     method: details.method,
                     timestamp: Date.now()
-                });
+                };
+
+                // Capture Request Body if present
+                if (details.requestBody) {
+                    if (details.requestBody.raw && details.requestBody.raw[0]) {
+                        try {
+                            const decoder = new TextDecoder("utf-8");
+                            const raw = details.requestBody.raw[0].bytes;
+                            reqData.body = decoder.decode(raw);
+                        } catch (e) { console.error('Error decoding body', e); }
+                    } else if (details.requestBody.formData) {
+                        reqData.body = JSON.stringify(details.requestBody.formData);
+                    }
+                }
+
+                networkLog.push(reqData);
             }
         }
     },
-    { urls: ["<all_urls>"] }
+    { urls: ["<all_urls>"] },
+    ["requestBody"]
 );
 
 chrome.webRequest.onCompleted.addListener(
@@ -30,6 +47,7 @@ chrome.webRequest.onCompleted.addListener(
             const req = networkLog.find(r => r.requestId === details.requestId);
             if (req) {
                 req.statusCode = details.statusCode;
+                // console.log('API Completed:', req.url, req.statusCode);
             }
         }
     },
@@ -63,6 +81,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.action) {
         case 'startRecording':
             isRecording = true;
+            networkLog = []; // Reset logs for new session
+            correlatedRequests = {};
+            console.log('Recording started. Network log cleared.');
             chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
                 if (tabs[0]) {
                     chrome.storage.local.set({
@@ -88,16 +109,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const event = message.event;
                 events.push(event);
 
-                // Correlate recent network requests (last 500ms) with this event
-                const recentReqs = networkLog.filter(req =>
-                    req.timestamp >= event.timestamp - 500 &&
-                    req.timestamp <= event.timestamp + 2000 // Allow some delay for API to fire after click
-                );
+                console.log('Processing Event:', event.type, 'Timestamp:', event.timestamp);
 
-                if (recentReqs.length > 0) {
-                    // attach to event or store in map
-                    event.apiCalls = recentReqs;
-                }
+                // Note: We defer correlation to the Generation step to ensure we capture
+                // API calls that happen slightly AFTER the UI event (race condition fix)
 
                 chrome.storage.local.set({ events });
                 // Notify popup if it's open
@@ -118,14 +133,24 @@ function generateAndDownload(language, strategy = 'smart') {
     // We'll implement the actual generator logic in a separate file or inline here for Phase 1
     // For now, let's just trigger a placeholder download
     chrome.storage.local.get(['events', 'initialUrl'], (result) => {
-        const recordedEvents = result.events || [];
+        let recordedEvents = result.events || [];
         const initialUrl = result.initialUrl || 'https://example.com';
 
         if (recordedEvents.length === 0 && !initialUrl) return;
 
-        // We'll call the generator here. 
-        // Since we are in a background worker (ESM or Service Worker), we might need to import the mapper.
-        // For MVP Phase 1 simplicity, I'll implement a basic version here and refactor later if needed.
+        // Perform Late Binding Correlation here
+        // This ensures strictly that we check ALL network logs against ALL events
+        // after the fact, so timing race conditions are irrelevant.
+        recordedEvents = recordedEvents.map(event => {
+            const matchedReqs = networkLog.filter(req =>
+                req.timestamp >= event.timestamp - 500 && // 500ms before
+                req.timestamp <= event.timestamp + 5000   // 5s after (generous window)
+            );
+            if (matchedReqs.length > 0) {
+                return { ...event, apiCalls: matchedReqs };
+            }
+            return event;
+        });
 
         let code = "";
         let fileName = "";
@@ -156,38 +181,58 @@ import static org.hamcrest.Matchers.*;
 import io.restassured.http.ContentType;`;
 
 function generateJavaCode(events, initialUrl, strategy) {
-    let steps = events.map(event => {
-        const locator = getBestLocator(event.locators, strategy);
-        let actionCode = "";
+    let uiSteps = [];
+    let apiSteps = [];
 
+    events.forEach(event => {
+        const locator = getBestLocator(event.locators, strategy);
+
+        // Generate UI Step
         if (event.type === 'click') {
-            actionCode = `        driver.findElement(${locator}).click();`;
+            uiSteps.push(`        driver.findElement(${locator}).click();`);
         } else if (event.type === 'input') {
-            actionCode = `        driver.findElement(${locator}).sendKeys("${event.value}");`;
+            uiSteps.push(`        driver.findElement(${locator}).sendKeys("${event.value}");`);
         } else if (event.type === 'change') {
-            actionCode = `        new Select(driver.findElement(${locator})).selectByVisibleText("${event.value}");`;
+            uiSteps.push(`        new Select(driver.findElement(${locator})).selectByVisibleText("${event.value}");`);
         } else {
-            actionCode = `        // Action: ${event.type} on ${locator}`;
+            uiSteps.push(`        // Action: ${event.type} on ${locator}`);
         }
 
-        // Add API Validation Logic (Hybrid Test)
+        // Collect API Validation Logic
         if (event.apiCalls && event.apiCalls.length > 0) {
-            const apiTests = event.apiCalls.map(api => {
-                return `
-        // API Validation for: ${api.method} ${api.url}
+            event.apiCalls.forEach(api => {
+                let apiBlock = `
+        // API Validation for: ${api.method} ${api.url}`;
+
+                // Add Body if present
+                if (api.body) {
+                    // Simple check if it's JSON to set ContentType
+                    const isJson = api.body.trim().startsWith('{') || api.body.trim().startsWith('[');
+                    const escapedBody = api.body.replace(/"/g, '\\"');
+
+                    apiBlock += `
+        String requestBody${api.requestId} = "${escapedBody}";
         given()
             .baseUri("${new URL(api.url).origin}")
-            .when()
+            ${isJson ? '.contentType(ContentType.JSON)\n            .accept(ContentType.JSON)' : ''}
+            .body(requestBody${api.requestId})
+        .when()
             .${api.method.toLowerCase()}("${new URL(api.url).pathname}")
-            .then()
+        .then()
             .statusCode(${api.statusCode || 200});`;
-            }).join('\n');
-
-            return actionCode + "\n" + apiTests;
+                } else {
+                    apiBlock += `
+        given()
+            .baseUri("${new URL(api.url).origin}")
+        .when()
+            .${api.method.toLowerCase()}("${new URL(api.url).pathname}")
+        .then()
+            .statusCode(${api.statusCode || 200});`;
+                }
+                apiSteps.push(apiBlock);
+            });
         }
-
-        return actionCode;
-    }).join('\n');
+    });
 
     return `
 import org.openqa.selenium.By;
@@ -207,7 +252,14 @@ public class GeneratedTest {
         
         try {
             driver.get("${initialUrl}");
-${steps}
+
+            // --- UI Interactions ---
+${uiSteps.join('\n')}
+
+            // --- API Verifications ---
+            // Validating backend calls triggered by above actions
+${apiSteps.join('\n')}
+
         } finally {
             driver.quit();
         }
@@ -245,39 +297,42 @@ ${steps}
 }
 
 function getBestLocator(locators, strategy) {
+    const esc = (s) => s ? s.replace(/"/g, '\\"') : '';
     // Strategy: 'xpath', 'css', 'smart' (default)
 
     if (strategy === 'xpath' && locators.xpath) {
-        return `By.xpath("${locators.xpath}")`;
+        return `By.xpath("${esc(locators.xpath)}")`;
     }
 
     if (strategy === 'css') {
-        if (locators.css) return `By.cssSelector("${locators.css}")`;
+        if (locators.css) return `By.cssSelector("${esc(locators.css)}")`;
         // Fallback for css strategy if no CSS found (rare)
-        if (locators.id) return `By.id("${locators.id}")`;
+        if (locators.id) return `By.id("${esc(locators.id)}")`;
     }
 
     // Smart / Default priority
-    if (locators.id) return `By.id("${locators.id}")`;
-    if (locators.name) return `By.name("${locators.name}")`;
-    if (locators.dataTest) return `By.cssSelector("[data-test='${locators.dataTest}']")`;
-    if (locators.css) return `By.cssSelector("${locators.css}")`;
-    return `By.xpath("${locators.xpath}")`;
+    if (locators.id) return `By.id("${esc(locators.id)}")`;
+    if (locators.name) return `By.name("${esc(locators.name)}")`;
+    if (locators.dataTest) return `By.cssSelector("[data-test='${esc(locators.dataTest)}']")`;
+    if (locators.css) return `By.cssSelector("${esc(locators.css)}")`;
+    return `By.xpath("${esc(locators.xpath)}")`;
 }
 
 function getBestLocatorPython(locators, strategy) {
+    const esc = (s) => s ? s.replace(/"/g, '\\"') : '';
+
     if (strategy === 'xpath' && locators.xpath) {
-        return `By.XPATH, "${locators.xpath}"`;
+        return `By.XPATH, "${esc(locators.xpath)}"`;
     }
 
     if (strategy === 'css') {
-        if (locators.css) return `By.CSS_SELECTOR, "${locators.css}"`;
-        if (locators.id) return `By.ID, "${locators.id}"`;
+        if (locators.css) return `By.CSS_SELECTOR, "${esc(locators.css)}"`;
+        if (locators.id) return `By.ID, "${esc(locators.id)}"`;
     }
 
-    if (locators.id) return `By.ID, "${locators.id}"`;
-    if (locators.name) return `By.NAME, "${locators.name}"`;
-    if (locators.dataTest) return `By.CSS_SELECTOR, "[data-test='${locators.dataTest}']"`;
-    if (locators.css) return `By.CSS_SELECTOR, "${locators.css}"`;
-    return `By.XPATH, "${locators.xpath}"`;
+    if (locators.id) return `By.ID, "${esc(locators.id)}"`;
+    if (locators.name) return `By.NAME, "${esc(locators.name)}"`;
+    if (locators.dataTest) return `By.CSS_SELECTOR, "[data-test='${esc(locators.dataTest)}']"`;
+    if (locators.css) return `By.CSS_SELECTOR, "${esc(locators.css)}"`;
+    return `By.XPATH, "${esc(locators.xpath)}"`;
 }

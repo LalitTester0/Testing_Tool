@@ -110,3 +110,59 @@ select {
   border-radius: 4px;
   border: 1px solid #ccc;
 }
+
+.settings-section {
+  border-top: 1px solid #eee;
+  margin-top: 16px;
+  padding-top: 8px;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 0;
+  color: #666;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-header:hover {
+  color: var(--primary-color);
+}
+
+.settings-panel {
+  display: none;
+  padding: 8px 0;
+}
+
+.settings-panel.active {
+  display: block;
+}
+
+.input-group {
+  margin-bottom: 10px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: #777;
+}
+
+input[type="password"], input[type="text"] {
+  width: calc(100% - 16px);
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-family: monospace;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  width: auto;
+  margin-top: 5px;
+}

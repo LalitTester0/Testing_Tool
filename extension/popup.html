@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>AI Automation Recorder</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
+
 <body>
   <div class="container">
     <header>
       <h1>Automation Recorder</h1>
       <div id="status-badge" class="badge idle">Idle</div>
+      <span id="ai-status" style="font-size: 10px; color: #888;">AI Offline</span>
     </header>
-    
+
     <main>
       <div class="controls">
         <button id="record-btn" class="primary">
@@ -29,14 +32,16 @@
       </div>
 
       <div class="export-section">
-        <label for="locator-strategy" style="font-size: 12px; margin-bottom: 4px; display: block;">Locator Strategy:</label>
+        <label for="locator-strategy" style="font-size: 12px; margin-bottom: 4px; display: block;">Locator
+          Strategy:</label>
         <select id="locator-strategy" style="margin-bottom: 10px;">
           <option value="smart">Smart (ID > CSS > XPath)</option>
           <option value="xpath">XPath Priority</option>
           <option value="css">CSS Priority</option>
         </select>
 
-        <label for="language-select" style="font-size: 12px; margin-bottom: 4px; display: block;">Output Language:</label>
+        <label for="language-select" style="font-size: 12px; margin-bottom: 4px; display: block;">Output
+          Language:</label>
         <select id="language-select">
           <option value="java">Selenium Java (TestNG)</option>
           <option value="python">Selenium Python (Pytest)</option>
@@ -44,13 +49,57 @@
         <button id="download-btn" class="secondary" disabled>
           Download Script
         </button>
+        <button id="download-pom-btn" class="secondary" disabled style="margin-top: 8px;">
+          Download POM (Multi-file)
+        </button>
+      </div>
+
+      <div class="assertion-section">
+        <h3>📝 Add Assertions</h3>
+        <div class="assertion-controls">
+          <label for="assertion-step-select" style="font-size: 12px; margin-bottom: 4px; display: block;">
+            Select Step:
+          </label>
+          <select id="assertion-step-select" disabled>
+            <option value="">No steps recorded yet</option>
+          </select>
+
+          <label for="assertion-input" style="font-size: 12px; margin-bottom: 4px; display: block; margin-top: 8px;">
+            Describe what to verify:
+          </label>
+          <textarea id="assertion-input"
+            placeholder="e.g., check that login button is displayed&#10;verify error message says 'Invalid credentials'&#10;check we are on dashboard page"
+            rows="3" disabled></textarea>
+
+          <button id="generate-assertion-btn" class="secondary" disabled>
+            Generate Assertion
+          </button>
+        </div>
+
+        <div id="assertions-list" class="assertions-list">
+          <!-- Generated assertions will appear here -->
+        </div>
       </div>
     </main>
 
     <footer>
+      <div class="settings-section">
+        <div id="settings-toggle" class="settings-header">
+          <span>⚙️ Settings</span>
+          <span id="toggle-icon">▼</span>
+        </div>
+        <div id="settings-panel" class="settings-panel">
+          <div class="input-group">
+            <label for="api-key-input">Gemini API Key:</label>
+            <input type="password" id="api-key-input" placeholder="Paste your API key here...">
+          </div>
+          <button id="save-settings-btn" class="primary btn-small">Save Key</button>
+        </div>
+      </div>
       <button id="clear-btn" class="text-btn">Clear Recording</button>
     </footer>
   </div>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
+
 </html>
